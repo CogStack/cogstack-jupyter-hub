@@ -14,54 +14,39 @@ concurrency:
   group: docker-jupyter-all-${{ github.ref }}
   cancel-in-progress: true
 
+# Build AMD64 natively (no QEMU)
 jobs:
-  build:
+  build-amd64:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
       id-token: write
-
-    env:
-      IMAGE_NAME: cogstacksystems/jupyter-hub
-
     strategy:
       fail-fast: false
       matrix:
         include:
-          # 1) Jupyter Hub (multi-arch)
           - id: hub
             repo: cogstacksystems/jupyter-hub
             dockerfile: Dockerfile_hub
             context: .
-            platforms: linux/amd64,linux/arm64
             gpu_build: "false"
-
-          # 2) Singleuser CPU (multi-arch)
           - id: singleuser-cpu
             repo: cogstacksystems/jupyter-singleuser
             dockerfile: Dockerfile_singleuser
             context: .
-            platforms: linux/amd64,linux/arm64
             gpu_build: "false"
-
-          # 3) Singleuser GPU (amd64 only)
           - id: singleuser-gpu
             repo: cogstacksystems/jupyter-singleuser-gpu
             dockerfile: Dockerfile_singleuser
             context: .
-            platforms: linux/amd64
             gpu_build: "true"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           submodules: recursive
           fetch-depth: 0
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -72,18 +57,29 @@ jobs:
         with:
           images: ${{ matrix.repo }}
           tags: |
-            # Strip "v" from tags like v1.2.3 -> 1.2.3 / 1.2
+            # strip v from vX.Y.Z
             type=semver,pattern={{version}},prefix=v
             type=semver,pattern={{major}}.{{minor}},prefix=v
-
-            # latest on MAIN (rolling dev) AND on releases (optional but common)
+            # latest on MAIN and on tags
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
-
-            # Other branches: branch name
+            # branches (non-PR)
             type=ref,event=branch,enable=${{ github.event_name != 'pull_request' }}
-
-            # Always add short sha
+            # sha
             type=sha,format=short
+
+      - name: Make suffixed tags (-amd64)
+        id: suffixed
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=""
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            out+="${{ matrix.repo }}:${tag}-amd64"$'\n'
+          done < <(printf "%s" "${{ steps.meta.outputs.tags }}")
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$out" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Log in to Docker Hub
         if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
@@ -92,19 +88,169 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      - name: Build and (conditionally) push
+      - name: Build & push (amd64)
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platforms }}
+          platforms: linux/amd64
           build-args: |
-            CPU_ARCHITECTURE=auto
+            CPU_ARCHITECTURE=amd64
             GPU_BUILD=${{ matrix.gpu_build }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.suffixed.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.opencontainers.image.title=${{ matrix.id }}
-          cache-from: type=gha,scope=${{ matrix.id }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.id }}
+          cache-from: |
+            type=gha,scope=${{ matrix.id }}-amd64
+            type=registry,ref=${{ matrix.repo }}:latest
+          cache-to: type=gha,mode=max,scope=${{ matrix.id }}-amd64
+          provenance: false
           push: ${{ github.event_name != 'pull_request' }}
+
+  # Build ARM64 natively (no QEMU)
+  build-arm64:
+    runs-on: ubuntu-22.04-arm
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    needs: []
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: hub
+            repo: cogstacksystems/jupyter-hub
+            dockerfile: Dockerfile_hub
+            context: .
+            gpu_build: "false"
+          - id: singleuser-cpu
+            repo: cogstacksystems/jupyter-singleuser
+            dockerfile: Dockerfile_singleuser
+            context: .
+            gpu_build: "false"
+          - id: singleuser-gpu
+            repo: cogstacksystems/jupyter-singleuser-gpu
+            dockerfile: Dockerfile_singleuser
+            context: .
+            gpu_build: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.repo }}
+          tags: |
+            type=semver,pattern={{version}},prefix=v
+            type=semver,pattern={{major}}.{{minor}},prefix=v
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+            type=ref,event=branch,enable=${{ github.event_name != 'pull_request' }}
+            type=sha,format=short
+
+      - name: Make suffixed tags (-arm64)
+        id: suffixed
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=""
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            out+="${{ matrix.repo }}:${tag}-arm64"$'\n'
+          done < <(printf "%s" "${{ steps.meta.outputs.tags }}")
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$out" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Log in to Docker Hub
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build & push (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          build-args: |
+            CPU_ARCHITECTURE=arm64
+            GPU_BUILD=${{ matrix.gpu_build }}
+          tags: ${{ steps.suffixed.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.title=${{ matrix.id }}
+          cache-from: |
+            type=gha,scope=${{ matrix.id }}-arm64
+            type=registry,ref=${{ matrix.repo }}:latest
+          cache-to: type=gha,mode=max,scope=${{ matrix.id }}-arm64
+          provenance: false
+          push: ${{ github.event_name != 'pull_request' }}
+
+  # Stitch multi-arch manifests and (optionally) clean staging tags
+  manifest:
+    runs-on: ubuntu-22.04
+    needs: [build-amd64, build-arm64]
+    if: ${{ github.event_name != 'pull_request' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: hub
+            repo: cogstacksystems/jupyter-hub
+          - id: singleuser-cpu
+            repo: cogstacksystems/jupyter-singleuser
+          - id: singleuser-gpu
+            repo: cogstacksystems/jupyter-singleuser-gpu
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Docker meta (recompute tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.repo }}
+          tags: |
+            type=semver,pattern={{version}},prefix=v
+            type=semver,pattern={{major}}.{{minor}},prefix=v
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+            type=ref,event=branch,enable=${{ github.event_name != 'pull_request' }}
+            type=sha,format=short
+
+      - name: Create multi-arch manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            echo "⛵ ${tag}"
+            docker buildx imagetools create \
+              -t "${{ matrix.repo }}:${tag}" \
+              "${{ matrix.repo }}:${tag}-amd64" \
+              "${{ matrix.repo }}:${tag}-arm64"
+          done < <(printf "%s" "${{ steps.meta.outputs.tags }}")
+
+      - name: Clean up staging tags (-amd64/-arm64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            docker buildx imagetools rm "${{ matrix.repo }}:${tag}-amd64" || true
+            docker buildx imagetools rm "${{ matrix.repo }}:${tag}-arm64" || true
+          done < <(printf "%s" "${{ steps.meta.outputs.tags }}")
