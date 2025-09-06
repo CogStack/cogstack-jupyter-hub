@@ -31,6 +31,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # prefer prebuilt wheels, never build from sdist for known heavy libs
 ENV PIP_PREFER_BINARY=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1
 
 USER root
 
@@ -147,19 +149,9 @@ RUN if [ "$GPU_BUILD" = "true" ] && [ "$CPU_ARCHITECTURE" = "amd64" ]; then \
       echo "CPU build or non-amd64: skipping NVIDIA repo setup"; \
     fi
 
-    # Not necessary, will corrupt nvidia-doker on install, use with care
+# Not necessary, will corrupt nvidia-doker on install, use with care
 # RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends apnvidia-driver-$NVIDIA_DRIVER_VERSION pocl-opencl-icd intel-opencl-icd \
 #   mesa-opencl-icd nvidia-opencl-dev libpocl-dev beignet-opencl-icd libnvidia-egl-wayland-dev nvidia-cuda-dev nvidia-cuda-toolkit nvidia-headless-$NVIDIA_DRIVER_VERSION
-
-# NVIDIA Docker
-#################################### PREVIOUS
-#RUN export distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-
-#RUN curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add -
-#RUN curl -s -L https://nvidia.github.io/nvidia-docker/$(. /etc/os-release;echo $ID$VERSION_ID)/nvidia-docker.list | tee /etc/apt/sources.list.d/nvidia-docker.list
-#RUN curl -s -L https://nvidia.github.io/libnvidia-container/experimental/$(. /etc/os-release;echo $ID$VERSION_ID)/libnvidia-container-experimental.list | tee /etc/apt/sources.list.d/libnvidia-container-experimental.list
-################################################################################################################################################################
-
 
 RUN apt --fix-broken install
 
@@ -201,23 +193,39 @@ RUN conda clean --all -f -y
 
 RUN fix-permissions $CONDA_DIR && fix-permissions /home/$NB_USER
 
+# bust cache
+ENV UV_VERSION=latest
+
+# install rust, medcat requirement, install UV
+ENV HOME=/root
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN curl -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
+ && chmod +x /tmp/rustup-init.sh \
+ && /tmp/rustup-init.sh -y \
+ && rm /tmp/rustup-init.sh
+
+RUN curl -Ls https://astral.sh/uv/install.sh -o /tmp/install_uv.sh \
+ && bash /tmp/install_uv.sh
+
+RUN UV_PATH=$(find / -name uv -type f | head -n1) && \
+    ln -s "$UV_PATH" /usr/local/bin/uv
+
 # update pip and install basic utilities
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
+RUN uv pip install --upgrade --system pip setuptools wheel
 
 # install the rest of the packages including medcat
 COPY ./requirements.txt /srv/jupyterhub/
-RUN pip3 install --no-cache-dir -r /srv/jupyterhub/requirements.txt
-
-COPY notebooks/demo_working_with_cogstack/requirements.txt /srv/jupyterhub/working_with_cogstack_requirements.txt
 # install requirements for working with cogstack scripts
-RUN pip3 install --no-cache-dir -r /srv/jupyterhub/working_with_cogstack_requirements.txt
+COPY notebooks/demo_working_with_cogstack/requirements.txt /srv/jupyterhub/working_with_cogstack_requirements.txt
 
-# Get the spacy model
-#ARG SPACY_MODELS="en_core_web_sm en_core_web_md en_core_web_lg"
-#RUN for spacy_model in ${SPACY_MODELS}; do python3 -m spacy download $spacy_model; done
-
-# clean up pip
-RUN pip3 cache purge
+RUN if [ "$GPU_BUILD" = "true" ] && [ "$CPU_ARCHITECTURE" = "amd64" ]; then \
+      uv pip install --system --no-cache-dir -r /srv/jupyterhub/requirements.txt && \
+      uv pip install --system --no-cache-dir -r /srv/jupyterhub/working_with_cogstack_requirements.txt ; \
+    else \
+      uv pip install --system --no-cache-dir -r /srv/jupyterhub/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu/ && \
+      uv pip install --system --no-cache-dir -r /srv/jupyterhub/working_with_cogstack_requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu/ ; \
+    fi
 
 #######################################################################################################
 
