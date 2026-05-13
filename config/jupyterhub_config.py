@@ -92,8 +92,9 @@ if SELECT_NOTEBOOK_IMAGE_ALLOWED == "true":
     # c.DockerSpawner.image_whitelist has been deprecated for allowed_images
     c.DockerSpawner.allowed_images = {
         "minimal": "jupyterhub/singleuser:latest",
+        'datascience': 'jupyter/datascience-notebook:r-4.3.1',
         "cogstack": "cogstacksystems/jupyter-singleuser:latest",
-        "cogstack-gpu": "cogstacksystems/jupyter-singleuser-gpu:latest"
+        # "cogstack-gpu": "cogstacksystems/jupyter-singleuser-gpu:latest"
     }
     # https://github.com/jupyterhub/dockerspawner/issues/423
     c.DockerSpawner.remove = True
