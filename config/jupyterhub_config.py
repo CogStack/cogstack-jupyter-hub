@@ -109,8 +109,11 @@ if RUN_IN_DEBUG_MODE == "true":
 # Spawn single-user servers as Docker containers
 class DockerSpawner(dockerspawner.DockerSpawner):
     def start(self):
+        # Sanitize username for volume naming: user@email.com -> user_at_email.com
+        safe_username = self.user.name.replace("@", "_at_")
+
         # username is self.user.name
-        self.volumes = {"jupyterhub-user-{}".format(self.user.name): NOTEBOOK_DIR}
+        self.volumes = {"jupyterhub-user-{}".format(safe_username): NOTEBOOK_DIR}
 
         # Mount the real users Docker volume on the host to the notebook user"s
         # # notebook directory in the container
