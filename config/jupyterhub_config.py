@@ -93,7 +93,7 @@ if SELECT_NOTEBOOK_IMAGE_ALLOWED == "true":
     c.DockerSpawner.allowed_images = {
         "minimal": "jupyterhub/singleuser:latest",
         'datascience': 'jupyter/datascience-notebook:r-4.3.1',
-        "cogstack": "cogstacksystems/jupyter-singleuser:latest",
+        "cogstack": "cogstacksystems/jupyter-singleuser:sha-ea5a685",
         # "cogstack-gpu": "cogstacksystems/jupyter-singleuser-gpu:latest"
     }
     # https://github.com/jupyterhub/dockerspawner/issues/423
@@ -327,7 +327,7 @@ if ENABLE_OIDC_AUTH == "true":
     c.GenericOAuthenticator.scope = ["openid", "profile", "email", "groups"]
 
     # Allow all authenticated users (or restrict with allowed_groups above)
-    # c.GenericOAuthenticator.allow_all = True
+    c.GenericOAuthenticator.allow_all = True
 else:
     c.FirstUseAuthenticator.create_users = True
     c.JupyterHub.authenticator_class = "firstuseauthenticator.FirstUseAuthenticator"
