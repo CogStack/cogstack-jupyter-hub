@@ -1,3 +1,19 @@
+  # ⚠️ This Project Has Moved Repository
+
+<div align="center">
+
+[![Project Moved](https://img.shields.io/badge/🚀-Project%20Moved-brightgreen)](https://github.com/CogStack/cogstack-platform)
+
+👉 Please visit the new repository here:
+**[https://github.com/CogStack/cogstack-platform](https://github.com/CogStack/cogstack-platform/tree/main/apps/cogstack-jupyter-hub)**
+
+[<img src="https://avatars.githubusercontent.com/u/28688163" width="45" />](https://github.com/CogStack/cogstack-platform)
+
+</div>
+
+---
+
+
 # Cogstack-Jupyter-Hub
 
 [![docker-jupyter-hub-all](https://github.com/CogStack/cogstack-jupyter-hub/actions/workflows/docker-build.yml/badge.svg?branch=main)](https://github.com/CogStack/cogstack-jupyter-hub/actions/workflows/docker-build.yml)
